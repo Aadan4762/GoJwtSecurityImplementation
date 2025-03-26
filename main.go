@@ -1,21 +1,69 @@
 package main
 
 import (
-  "fmt"
+	"JwtSecurityImplementation/controllers"
+	"JwtSecurityImplementation/internal/config"
+	"JwtSecurityImplementation/middleware"
+	"JwtSecurityImplementation/repositories"
+	"JwtSecurityImplementation/routes"
+	"JwtSecurityImplementation/services"
+	"log"
+	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
-  //TIP <p>Press <shortcut actionId="ShowIntentionActions"/> when your caret is at the underlined text
-  // to see how GoLand suggests fixing the warning.</p><p>Alternatively, if available, click the lightbulb to view possible fixes.</p>
-  s := "gopher"
-  fmt.Println("Hello and welcome, %s!", s)
+	// Set Gin to release mode in production
+	gin.SetMode(gin.ReleaseMode)
 
-  for i := 1; i <= 5; i++ {
-	//TIP <p>To start your debugging session, right-click your code in the editor and select the Debug option.</p> <p>We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-	// for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.</p>
-	fmt.Println("i =", 100/i)
-  }
+	// Load environment variables
+	if err := godotenv.Load(); err != nil {
+		log.Println("Warning: No .env file found. Using default or system environment variables.")
+	}
+
+	// Initialize database
+	db, err := config.InitDatabase()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	// Initialize repositories
+	userRepo := repositories.NewUserRepository(db)
+	tokenRepo := repositories.NewTokenRepository(db)
+
+	// Initialize services
+	authService := services.NewAuthService(userRepo)
+	tokenService := services.NewTokenService(tokenRepo)
+
+	// Initialize controllers
+	authController := controllers.NewAuthController(authService, tokenService)
+
+	// Initialize middleware
+	jwtMiddleware := middleware.NewJWTMiddleware(tokenService)
+
+	// Setup Gin router
+	r := gin.New()
+
+	// Add recovery and logging middleware
+	r.Use(gin.Recovery())
+	r.Use(gin.Logger())
+
+	// Setup CORS if needed
+	// r.Use(middleware.CORSMiddleware())
+
+	// Setup routes
+	routes.SetupAuthRoutes(r, authController, jwtMiddleware)
+
+	// Start server
+	port := os.Getenv("SERVER_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Starting server on port %s", port)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
